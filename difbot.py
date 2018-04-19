@@ -1,4 +1,5 @@
 import requests
+import sys
 from bs4 import BeautifulSoup
 import sys
 import re
@@ -16,28 +17,40 @@ def get_published_results():
         with open(LOG_FILE_NAME) as f:
             for row in f:
                 xs = row.split()
-                res |= {Result(xs[0], xs[1], int(xs[2]), xs[3], int(xs[4]))}
+                res |= {Result(xs[0], xs[1].replace('_', ' '), int(xs[2]), xs[3].replace('_', ' '), int(xs[4]))}
     return res
 
 
 def write_published_result(result):
     with open(LOG_FILE_NAME, 'a') as f:
-        f.write('%s %s %d %s %d\n' % (result.date, result.home, result.home_goals, result.away, result.away_goals))
+        f.write('%s %s %d %s %d\n' % (result.date, result.home.replace(' ', '_'), result.home_goals, result.away.replace(' ', '_'), result.away_goals))
 
 
 def publish_result(result):
-    if len(sys.argv) > 1 and sys.argv[1] == 'onlywins':
-        if 'Djurgården' == result.home and result.home_goals > result.away_goals:
-            should_publish = True
-        elif 'Djurgården' == result.away and result.away_goals > result.home_goals:
-            should_publish = True
-        else:
-            should_publish = False
-    else:
+    if 'Djurgården' == result.home and result.home_goals > result.away_goals:
         should_publish = True
+    elif 'Djurgården' == result.away and result.away_goals > result.home_goals:
+        should_publish = True
+    else:
+        should_publish = False
 
     if should_publish:
-        print(result)
+        url = sys.argv[1]
+        room_id = sys.argv[2]
+        key = sys.argv[3]
+        url = "https://%s/v2/room/%s/notification?auth_token=%s" % (url, room_id, key)
+        data = {
+            "from": "DIF-Bot",
+            "color": "green",
+            "message_format": "text",
+            "notify": False,
+            "message": '%s - %s %d-%d' % (result.home, result.away, result.home_goals, result.away_goals)
+        }
+        try:
+            resp = requests.post(url, data=data)
+            print("Code:", resp.status_code, "Response:", resp.text)
+        except Exception:
+            traceback.print_exc()
 
 
 def get_new_results():
@@ -63,13 +76,11 @@ def get_new_results():
 
 def run():
     published = get_published_results()
-    while True:
-        for r in get_new_results():
-            if r not in published:
-                publish_result(r)
-                write_published_result(r)
-                published |= {r}
-        time.sleep(60 * 60)
+    for r in get_new_results():
+        if r not in published:
+            publish_result(r)
+            write_published_result(r)
+            published |= {r}
 
 
 if __name__ == "__main__":
